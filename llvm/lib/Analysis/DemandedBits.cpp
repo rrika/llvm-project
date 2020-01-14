@@ -44,6 +44,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/DemandedBits.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -175,26 +176,7 @@ void DemandedBits::determineLiveOperandBits(
   case Instruction::Add:
   case Instruction::Sub: {
     ComputeKnownBits(BitWidth, UserI->getOperand(0), UserI->getOperand(1));
-    // When Bound == 0, this should behave just like
-    // AB = APInt::getLowBitsSet(BitWidth, AOut.getActiveBits());
-    APInt Bound1;
-    if (UserI->getOpcode() == Instruction::Add)
-      Bound1 = Known.Zero;
-    else
-      Bound1 = Known.One;
-    APInt Bound2 = Known2.Zero;
-    APInt Bound = Bound1 & Bound2;
-    APInt RBound = Bound.reverseBits();
-    APInt RAOut = AOut.reverseBits();
-    APInt RProp = RAOut + (RAOut | ~RBound);
-    APInt RQ = (RProp ^ ~(RAOut | RBound));
-    APInt Q = RQ.reverseBits();
-    APInt U;
-    if (OperandNo == 0)
-      U = Bound1 | ~Bound2;
-    else
-      U = Bound2 | ~Bound1;
-    AB = AOut | (Q & (U | (Bound1 + Bound2 + 1)));
+    AB = determineLiveOperandBitsAdd(OperandNo, AOut, Known, Known2);
     break;
   }
   case Instruction::Mul:

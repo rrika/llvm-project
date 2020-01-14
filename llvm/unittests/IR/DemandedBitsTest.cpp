@@ -7,12 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/DemandedBits.h"
-#include "llvm/ADT/BitVector.h"
-#include "llvm/Analysis/AssumptionCache.h"
-#include "llvm/IR/Dominators.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Operator.h"
+#include "llvm/Support/DemandedBits.h"
 #include "llvm/Support/KnownBits.h"
 #include "gtest/gtest.h"
 
@@ -51,61 +46,16 @@ static void EnumerateRemainingBits(const KnownBits &Known, Fn TestFn) {
   }
 }
 
-template <typename Fn>
-static void PropagateBinOp(const KnownBits &Known1, const KnownBits &Known2,
-                           const APInt &AOut, APInt &AB1, APInt &AB2,
-                           Fn BuildOp) {
-  unsigned Bits = AOut.getBitWidth();
-
-  LLVMContext C;
-  Module M("test", C);
-  Type *NumericTy = Type::getIntNTy(C, Bits);
-
-  Type *ArgTypes[] = {NumericTy, NumericTy};
-  Function *F = Function::Create(
-      FunctionType::get(NumericTy, ArrayRef<Type *>(ArgTypes, 2), false),
-      GlobalValue::ExternalLinkage, "F", &M);
-  BasicBlock *BB = BasicBlock::Create(C, "", F);
-  IRBuilder<> Builder(BB);
-
-  Value *Known1NZero = Builder.getInt(~Known1.Zero);
-  Value *Known1One = Builder.getInt(Known1.One);
-  Value *Known2NZero = Builder.getInt(~Known2.Zero);
-  Value *Known2One = Builder.getInt(Known2.One);
-  Value *AOutImm = Builder.getInt(AOut);
-
-  Argument *Arg1 = F->getArg(0);
-  Argument *Arg2 = F->getArg(1);
-  Value *Dummy1 = Builder.CreateNot(Arg1);
-  Value *Dummy2 = Builder.CreateNot(Arg2);
-  Value *Op1 =
-      Builder.CreateOr(Builder.CreateAnd(Dummy1, Known1NZero), Known1One);
-  Value *Op2 =
-      Builder.CreateOr(Builder.CreateAnd(Dummy2, Known2NZero), Known2One);
-
-  Value *IOp = BuildOp(Builder, Op1, Op2);
-
-  Value *IMasked = Builder.CreateAnd(IOp, AOutImm);
-  Builder.CreateRet(IMasked);
-
-  AssumptionCache AC(*F);
-  DominatorTree DT(*F);
-  DemandedBits DB(*F, AC, DT);
-  AB1 = DB.getDemandedBits(dyn_cast<Instruction>(Op1));
-  AB2 = DB.getDemandedBits(dyn_cast<Instruction>(Op2));
-}
-
 template <typename Fn1, typename Fn2>
-static void TestBinOpExhaustive(Fn1 BuildOp, Fn2 EvalFn) {
+static void TestBinOpExhaustive(Fn1 PropagateFn, Fn2 EvalFn) {
   unsigned Bits = 4;
   unsigned Max = 1 << Bits;
   EnumerateTwoKnownBits(
       Bits, [&](const KnownBits &Known1, const KnownBits &Known2) {
         for (unsigned AOut_ = 0; AOut_ < Max; AOut_++) {
           APInt AOut(Bits, AOut_);
-          APInt AB1;
-          APInt AB2;
-          PropagateBinOp(Known1, Known2, AOut, AB1, AB2, BuildOp);
+          APInt AB1 = PropagateFn(0, AOut, Known1, Known2);
+          APInt AB2 = PropagateFn(1, AOut, Known1, Known2);
           {
             // If the propagator claims that certain known bits
             // didn't matter, check that the result doesn't
@@ -117,9 +67,8 @@ static void TestBinOpExhaustive(Fn1 BuildOp, Fn2 EvalFn) {
             Known2_.Zero = Known2.Zero & AB2;
             Known2_.One = Known2.One & AB2;
 
-            APInt AB1_;
-            APInt AB2_;
-            PropagateBinOp(Known1_, Known2_, AOut, AB1_, AB2_, BuildOp);
+            APInt AB1_ = PropagateFn(0, AOut, Known1_, Known2_);
+            APInt AB2_ = PropagateFn(1, AOut, Known1_, Known2_);
             EXPECT_EQ(AB1, AB1_);
             EXPECT_EQ(AB1, AB1_);
           }
@@ -137,17 +86,13 @@ static void TestBinOpExhaustive(Fn1 BuildOp, Fn2 EvalFn) {
 
 TEST(DemandedBitsTest, Add) {
   TestBinOpExhaustive(
-      [](IRBuilder<> &Builder, Value *Op1, Value *Op2) -> Value * {
-        return Builder.CreateAdd(Op1, Op2);
-      },
+      determineLiveOperandBitsAdd,
       [](APInt N1, APInt N2) -> APInt { return N1 + N2; });
 }
 
 TEST(DemandedBitsTest, Sub) {
   TestBinOpExhaustive(
-      [](IRBuilder<> &Builder, Value *Op1, Value *Op2) -> Value * {
-        return Builder.CreateSub(Op1, Op2);
-      },
+      determineLiveOperandBitsSub,
       [](APInt N1, APInt N2) -> APInt { return N1 - N2; });
 }
 

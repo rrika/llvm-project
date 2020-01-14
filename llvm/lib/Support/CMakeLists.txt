@@ -85,6 +85,7 @@ add_llvm_component_library(LLVMSupport
   Debug.cpp
   DebugCounter.cpp
   DeltaAlgorithm.cpp
+  DemandedBits.cpp
   DAGDeltaAlgorithm.cpp
   DJB.cpp
   Error.cpp

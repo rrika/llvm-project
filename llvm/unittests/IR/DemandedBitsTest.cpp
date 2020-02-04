@@ -6,7 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Analysis/DemandedBits.h"
 #include "llvm/Support/DemandedBits.h"
 #include "llvm/Support/KnownBits.h"
 #include "gtest/gtest.h"

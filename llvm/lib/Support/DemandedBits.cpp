@@ -1,4 +1,4 @@
-//===-- KnownBits.cpp - Stores known zeros/ones ---------------------------===//
+//===-- DemandedBits.cpp - Alive bit propagators---------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -14,7 +14,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/KnownBits.h"
 
-using namespace llvm;
+namespace llvm {
 
 static APInt determineLiveOperandBitsAddSub(
 		unsigned OperandNo, const APInt &AOut,
@@ -48,3 +48,5 @@ APInt determineLiveOperandBitsSub(
 {
 	return determineLiveOperandBitsAddSub(OperandNo, AOut, KnownLHS.One, KnownRHS.Zero);
 }
+
+} // namespace llvm
